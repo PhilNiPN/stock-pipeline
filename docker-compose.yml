@@ -1,0 +1,183 @@
+services:
+  db:
+    image: postgres:17.5
+    container_name: stock_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mysecretpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-stockdb}
+      
+    ports:
+      - '${POSTGRES_PORT:-5434}:5432' #local port: docker port
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-stockdb}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+      - ./sql/002_airflow_init.sql:/docker-entrypoint-initdb.d/002_airflow_init.sql:ro
+
+
+  airflow-init:
+   image: apache/airflow:2.9.3-python3.11
+   entrypoint: /bin/bash
+   command:
+     - -lc
+     - >
+       set -e;
+       airflow db migrate && airflow users create --username '${AIRFLOW_ADMIN_USERNAME:-admin}' --password '${AIRFLOW_ADMIN_PASSWORD:-admin}' --firstname 'Admin' --lastname 'User' --role 'Admin' --email '${AIRFLOW_ADMIN_EMAIL:-admin@example.com}'
+   env_file:
+     - .env
+   environment:
+     AIRFLOW__CORE__EXECUTOR: LocalExecutor
+     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_USER:-airflow}:${AIRFLOW_PASSWORD:-airflowpass}@db:5432/${AIRFLOW_DB:-airflow}
+     AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
+     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+     # Database connection for the ETL pipeline
+     DB_HOST: db
+     DB_PORT: 5432
+     DB_NAME: ${POSTGRES_DB:-stockdb}
+     DB_USER: ${POSTGRES_USER:-postgres}
+     DB_PASSWORD: ${POSTGRES_PASSWORD:-mysecretpassword}
+   depends_on:
+     db:
+       condition: service_healthy
+   volumes:
+     - ./dags:/opt/airflow/dags
+     - ./app:/opt/app
+     - pipeline_data:/tmp/pipeline_data
+
+  pipeline-data-init:
+    image: alpine:3.19
+    command: >
+      sh -lc 'mkdir -p /tmp/pipeline_data && chown -R 50000:0 /tmp/pipeline_data && chmod 0777 /tmp/pipeline_data'
+    volumes:
+      - pipeline_data:/tmp/pipeline_data
+    restart: "no"
+
+  airflow-webserver:
+    image: apache/airflow:2.9.3-python3.11
+    command: >
+      bash -lc 'pip install --no-cache-dir
+      --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt
+      -r /requirements.txt && exec airflow webserver'
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: ${AIRFLOW__CORE__LOAD_EXAMPLES:-False}
+      AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
+      AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER: ""
+      AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID: ""
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_USER:-airflow}:${AIRFLOW_PASSWORD:-airflowpass}@db:5432/${AIRFLOW_DB:-airflow}
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "False"
+      # Database connection for the ETL pipeline
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-stockdb}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-mysecretpassword}
+    depends_on:
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      pipeline-data-init:
+        condition: service_completed_successfully
+    ports:
+      - '127.0.0.1:8081:8080'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl --fail http://localhost:8080/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./app:/opt/app
+      - ./requirements.txt:/requirements.txt:ro
+      - pipeline_data:/tmp/pipeline_data
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.3-python3.11
+    command: >
+      bash -lc 'pip install --no-cache-dir
+      --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt
+      -r /requirements.txt && exec airflow scheduler'
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__LOGGING__REMOTE_LOGGING: "false"
+      AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER: ""
+      AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID: ""
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_USER:-airflow}:${AIRFLOW_PASSWORD:-airflowpass}@db:5432/${AIRFLOW_DB:-airflow}
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "False"
+      # Database connection for the ETL pipeline
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-stockdb}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-mysecretpassword}
+    depends_on:
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      pipeline-data-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./app:/opt/app
+      - ./requirements.txt:/requirements.txt:ro
+      - pipeline_data:/tmp/pipeline_data
+
+  etl:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    working_dir: /opt/app
+    command: >
+      bash -lc 'echo 'ETL container ready. Use: docker compose exec etl python run_pipeline.py' && tail -f /dev/null'
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./app:/opt/app
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:${STREAMLIT_PORT:-8501}:8501'
+    environment:
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_RUN_ON_SAVE=true
+      - STREAMLIT_SERVER_FILE_WATCHER_TYPE=poll
+    volumes:
+      - ./frontend:/opt/frontend
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
+volumes:
+  pgdata:
+  pipeline_data:
+
+networks:
+  default:
+    name: stocknet

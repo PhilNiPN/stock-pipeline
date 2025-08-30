@@ -1,0 +1,30 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Airflow
+airflow/logs/
+airflow/dags/__pycache__/
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Data & misc
+.env
+.env.*
+*.db
+*.sqlite
+.DS_Store
+ARCHITECTURE.md

@@ -1,0 +1,48 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Local env & secrets
+.env
+.env.*
+
+# VCS and IDE
+.git/
+.github/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs & temp
+*.log
+*.tmp
+*.temp
+tmp/
+temp/
+cache/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Airflow runtime noise
+airflow/logs/
+airflow/__pycache__/
+
+# Large data (adjust as needed)
+data/
+logs/
+*.db
+*.sqlite

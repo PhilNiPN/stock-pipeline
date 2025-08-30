@@ -1,0 +1,17 @@
+# 1. 
+run "cp env.example .env" in terminal
+
+# 2. Rebuild everything (this will clear everything)
+"docker compose down -v"  
+"docker compose up -d --build" 
+
+# 3. your secret key and fernet key
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# 4. Wait for services to be healthy, then run the setup script
+docker compose exec airflow-webserver python /opt/app/setup_airflow_variables.py
+
+# 5. trigger the bootstrap_stock_data_dag in airflow
+
+# 6. view streamlit dashboard
