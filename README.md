@@ -1,4 +1,5 @@
-# Stock Data Pipeline & Analytics Platform \n
+# Stock Data Pipeline & Analytics Platform 
+
 This project implements an end-to-end, multi-container solution for collecting and visualizing stock market data.  
 The pipeline automates the entire workflow: it ingests historical stock prices using `yfinance`, computes technical indicators (daily returns, rolling volatility, and exponential moving averages), and stores the results in PostgreSQL.  
 
@@ -7,7 +8,7 @@ All services — PostgreSQL, Airflow, Streamlit, and Python application code —
 
 ![Pipeline Architecture](architecture.png)
 
-##  Key Features
+## Key Features
 
 - **End-to-End Multi-Container Setup**: PostgreSQL, Airflow, Streamlit, and Python ETL services orchestrated with Docker Compose.
 - **Automated ETL Pipeline**: Daily extraction of OHLCV stock data from Yahoo Finance with incremental processing (fetches only new data).
@@ -26,7 +27,7 @@ All services — PostgreSQL, Airflow, Streamlit, and Python application code —
 - **Testing Framework**: Comprehensive pytest suite with coverage options and custom test runner.
 
 
-##  Architecture Overview
+## Architecture Overview
 
 ### Data Flow
 ```
