@@ -1,4 +1,4 @@
-# Stock Data Pipeline & Analytics Platform
+# Stock Data Pipeline & Analytics Platform \n
 This project implements an end-to-end, multi-container solution for collecting and visualizing stock market data.  
 The pipeline automates the entire workflow: it ingests historical stock prices using `yfinance`, computes technical indicators (daily returns, rolling volatility, and exponential moving averages), and stores the results in PostgreSQL.  
 
@@ -280,5 +280,6 @@ This project is open source and available under the MIT License.
 ---
 
 
-#   s t o c k - p i p e l i n e  
+#   s t o c k - p i p e l i n e 
+ 
  
