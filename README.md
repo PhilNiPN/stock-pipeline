@@ -279,8 +279,3 @@ This project showcases advanced data engineering capabilities:
 This project is open source and available under the MIT License.
 
 ---
-
-
-#   s t o c k - p i p e l i n e 
- 
- 
