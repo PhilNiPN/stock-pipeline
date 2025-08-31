@@ -8,6 +8,26 @@ All services — PostgreSQL, Airflow, Streamlit, and Python application code —
 
 ![Pipeline Architecture](architecture.png)
 
+## Table of Contents
+- [Key Features](#key-features)
+- [Technology Stack](#technology-stack)
+- [Architecture Overview](#architecture-overview)
+- [Data Model](#data-model)
+- [Pipeline Variants](#pipeline-variants)
+- [Quick Start](#quick-start)
+- [Testing](#testing)
+- [Dashboard Features](#dashboard-features)
+- [Configuration](#configuration)
+  - [Airflow Variables](#airflow-variables)
+  - [Environment Variables](#environment-variables)
+- [Production Features](#production-features)
+- [Project Structure](#project-structure)
+- [Technical Skills Demonstrated](#technical-skills-demonstrated)
+- [Future Enhancements](#future-enhancements)
+  - [Near-term improvements](#near-term-improvements)
+  - [Long-term roadmap](#long-term-roadmap)
+- [License](#license)
+
 ## Key Features
 
 - **End-to-End Multi-Container Setup**: PostgreSQL, Airflow, Streamlit, and Python ETL services orchestrated with Docker Compose.
@@ -26,6 +46,17 @@ All services — PostgreSQL, Airflow, Streamlit, and Python application code —
 - **Containerized Deployment**: Consistent local/prod environment with isolated services.
 - **Testing Framework**: Comprehensive pytest suite with coverage options and custom test runner.
 
+##  Technology Stack
+
+- **Python 3.11**: Core application logic
+- **Apache Airflow 2.9 (TaskFlow API)**: Workflow orchestration and scheduling
+- **PostgreSQL 17.5**: Relational database with indexed schema
+- **SQLAlchemy & psycopg2‑binary** for database access
+- **Pandas/NumPy**: Data manipulation and financial calculations
+- **Streamlit**: Interactive web dashboard
+- **Plotly**: Professional financial charts
+- **Containerization**: Docker & docker‑compose for reproducible multi‑service setup (database, Airflow, ETL worker and frontend)
+- **pytest**: Comprehensive testing framework
 
 ## Architecture Overview
 
@@ -61,20 +92,6 @@ Yahoo Finance API → Extract → Transform → PostgreSQL → Streamlit Dashboa
   - Streamlit dashboard backed by live PostgreSQL queries
   - Provides candlestick charts, EMA overlays, volume bars, and date range filtering
   - Uses Plotly for high-quality, interactive financial charts
-  
-
-
-##  Technology Stack
-
-- **Python 3.11**: Core application logic
-- **Apache Airflow 2.9 (TaskFlow API)**: Workflow orchestration and scheduling
-- **PostgreSQL 17.5**: Relational database with indexed schema
-- **SQLAlchemy & psycopg2‑binary** for database access
-- **Pandas/NumPy**: Data manipulation and financial calculations
-- **Streamlit**: Interactive web dashboard
-- **Plotly**: Professional financial charts
-- **Containerization**: Docker & docker‑compose for reproducible multi‑service setup (database, Airflow, ETL worker and frontend)
-- **pytest**: Comprehensive testing framework
 
 ##  Data Model
 
@@ -112,7 +129,7 @@ The central fact table combines raw OHLCV stock data with technical indicators f
 - **Cross-stock analysis**: Fast date-range filtering across multiple tickers  
 - **Visualization**: Optimized for candlestick charts, overlays, and volatility studies  
 
-##  Pipeline Variants
+##  DAG Variants
 
 | Pipeline                | Purpose                              | Schedule      | Key Features |
 |--------------------------|--------------------------------------|---------------|--------------|
@@ -122,7 +139,7 @@ The central fact table combines raw OHLCV stock data with technical indicators f
 
 ![Airflow Example 1](airflow-ui.png)
 ![Airflow Example 2](airflow-DAG-overview.png)
-![Airflow Example 2](airflow-bootstrap.png)
+![Airflow Example 3](airflow-bootstrap.png)
 
 ##  Quick Start
 
@@ -132,7 +149,7 @@ The central fact table combines raw OHLCV stock data with technical indicators f
 
 ### 1. Clone and Setup
 ```bash
-git clone <repository-url>
+git clone https://github.com/PhilNiPN/stock-pipeline.git
 cd stock-pipeline
 cp env.example .env
 ```
