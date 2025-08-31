@@ -122,7 +122,7 @@ The central fact table combines raw OHLCV stock data with technical indicators f
 
 ![Airflow Example 1](airflow-ui.png)
 ![Airflow Example 2](airflow-DAG-overview.png)
-![Airflow Example 2](airflow-bootstrap.png)
+![Airflow Example 3](airflow-bootstrap.png)
 
 ##  Quick Start
 
