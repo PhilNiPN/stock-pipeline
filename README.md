@@ -26,6 +26,17 @@ All services — PostgreSQL, Airflow, Streamlit, and Python application code —
 - **Containerized Deployment**: Consistent local/prod environment with isolated services.
 - **Testing Framework**: Comprehensive pytest suite with coverage options and custom test runner.
 
+##  Technology Stack
+
+- **Python 3.11**: Core application logic
+- **Apache Airflow 2.9 (TaskFlow API)**: Workflow orchestration and scheduling
+- **PostgreSQL 17.5**: Relational database with indexed schema
+- **SQLAlchemy & psycopg2‑binary** for database access
+- **Pandas/NumPy**: Data manipulation and financial calculations
+- **Streamlit**: Interactive web dashboard
+- **Plotly**: Professional financial charts
+- **Containerization**: Docker & docker‑compose for reproducible multi‑service setup (database, Airflow, ETL worker and frontend)
+- **pytest**: Comprehensive testing framework
 
 ## Architecture Overview
 
@@ -61,20 +72,6 @@ Yahoo Finance API → Extract → Transform → PostgreSQL → Streamlit Dashboa
   - Streamlit dashboard backed by live PostgreSQL queries
   - Provides candlestick charts, EMA overlays, volume bars, and date range filtering
   - Uses Plotly for high-quality, interactive financial charts
-  
-
-
-##  Technology Stack
-
-- **Python 3.11**: Core application logic
-- **Apache Airflow 2.9 (TaskFlow API)**: Workflow orchestration and scheduling
-- **PostgreSQL 17.5**: Relational database with indexed schema
-- **SQLAlchemy & psycopg2‑binary** for database access
-- **Pandas/NumPy**: Data manipulation and financial calculations
-- **Streamlit**: Interactive web dashboard
-- **Plotly**: Professional financial charts
-- **Containerization**: Docker & docker‑compose for reproducible multi‑service setup (database, Airflow, ETL worker and frontend)
-- **pytest**: Comprehensive testing framework
 
 ##  Data Model
 
