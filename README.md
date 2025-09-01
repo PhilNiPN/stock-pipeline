@@ -36,7 +36,7 @@ All services — PostgreSQL, Airflow, Streamlit, and Python application code —
   - Daily returns
   - Rolling annualized volatility
   - Exponential Moving Averages (EMA 9, 20, 50)
-  - Candlestick metrics (body size, shadows, ranges)
+  - Candlestick metrics
 - **Idempotent Database Loading**: PostgreSQL upserts with conflict resolution ensure safe re-runs.
 - **Airflow Orchestration**:
   - TaskFlow API for clean DAG design
