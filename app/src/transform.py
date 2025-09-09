@@ -19,9 +19,10 @@ includes a 'date' column derived from the index and a 'ticker' column.
 from __future__ import annotations
 
 import logging
-from typing import Iterable, List
+from typing import Iterable, List, Tuple
 
 import pandas as pd
+import numpy as np
 
 from .utils import setup_logging
 
@@ -95,13 +96,123 @@ def _compute_emas(series: pd.Series, spans: Iterable[int]) -> pd.DataFrame:
     return pd.DataFrame(ema_frames)
 
 
+def _compute_macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
+    '''Compute MACD (Moving Average Convergence Divergence) indicator.
+
+    MACD is calculated as the difference between fast and slow EMAs.
+    The signal line is an EMA of the MACD line.
+
+    Parameters
+    ----------
+    series : pandas.Series
+        Price series (typically closing prices).
+    fast : int, optional
+        Fast EMA period. Defaults to 12.
+    slow : int, optional
+        Slow EMA period. Defaults to 26.
+    signal : int, optional
+        Signal line EMA period. Defaults to 9.
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame with columns: 'macd', 'macd_signal', 'macd_histogram'.
+    '''
+    ema_fast = series.ewm(span=fast, adjust=False).mean()
+    ema_slow = series.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    histogram = macd_line - signal_line
+    
+    return pd.DataFrame({
+        'macd': macd_line,
+        'macd_signal': signal_line,
+        'macd_histogram': histogram
+    })
+
+
+def _compute_bollinger_bands(series: pd.Series, window: int = 20, num_std: float = 2.0) -> pd.DataFrame:
+    '''Compute Bollinger Bands indicator.
+
+    Bollinger Bands consist of a middle band (SMA) and upper/lower bands
+    that are standard deviations away from the middle band.
+
+    Parameters
+    ----------
+    series : pandas.Series
+        Price series (typically closing prices).
+    window : int, optional
+        Rolling window for SMA and standard deviation. Defaults to 20.
+    num_std : float, optional
+        Number of standard deviations for upper/lower bands. Defaults to 2.0.
+
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame with columns: 'bb_middle', 'bb_upper', 'bb_lower', 'bb_width', 'bb_position'.
+    '''
+    middle_band = series.rolling(window=window).mean()
+    std = series.rolling(window=window).std()
+    upper_band = middle_band + (std * num_std)
+    lower_band = middle_band - (std * num_std)
+    bb_width = (upper_band - lower_band) / middle_band
+    bb_position = (series - lower_band) / (upper_band - lower_band)
+    
+    return pd.DataFrame({
+        'bb_middle': middle_band,
+        'bb_upper': upper_band,
+        'bb_lower': lower_band,
+        'bb_width': bb_width,
+        'bb_position': bb_position
+    })
+
+
+def _compute_rsi(series: pd.Series, window: int = 14) -> pd.Series:
+    '''Compute RSI (Relative Strength Index) indicator.
+
+    RSI measures the speed and magnitude of price changes to identify
+    overbought (>70) and oversold (<30) conditions.
+
+    Parameters
+    ----------
+    series : pandas.Series
+        Price series (typically closing prices).
+    window : int, optional
+        Rolling window for RSI calculation. Defaults to 14.
+
+    Returns
+    -------
+    pandas.Series
+        RSI values between 0 and 100.
+    '''
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    
+    # Use Wilder's smoothing (exponential moving average)
+    alpha = 1.0 / window
+    avg_gain = gain.ewm(alpha=alpha, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=alpha, adjust=False).mean()
+    
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    
+    return rsi
+
+
 def calculate_financial_metrics(
     data: pd.DataFrame,
     ema_spans: Iterable[int] = (9, 20, 50),
     volatility_window: int = 21,
     validate_columns: bool = False,
+    include_macd: bool = True,
+    include_bollinger_bands: bool = True,
+    include_rsi: bool = True,
+    macd_params: Tuple[int, int, int] = (12, 26, 9),
+    bb_params: Tuple[int, float] = (20, 2.0),
+    rsi_window: int = 14,
 ) -> pd.DataFrame:
-    '''Compute returns, volatility, and EMAs per ticker and return a wide table.
+    '''Compute returns, volatility, EMAs, and technical indicators per ticker and return a wide table.
 
     The input may hold one or many tickers. When multiple tickers are
     downloaded via yfinance, columns are usually a MultiIndex where the
@@ -112,8 +223,9 @@ def calculate_financial_metrics(
     2. computes daily fractional returns via pct_change()
     3. computes rolling annualised volatility over volatility_window
     4. computes EMAs for each 'ema_spans' value
-    5. assembles a wide DataFrame with OHLCV, adj_close (or close)
-       return, volatility, EMA columns, plus 'ticker' and 'date'.
+    5. computes MACD, Bollinger Bands, and RSI indicators (if enabled)
+    6. assembles a wide DataFrame with OHLCV, adj_close (or close)
+       return, volatility, EMA columns, technical indicators, plus 'ticker' and 'date'.
     
     Parameters
     ----------
@@ -127,13 +239,26 @@ def calculate_financial_metrics(
     validate_columns : bool, optional
         If True, validates required OHLCV columns before processing. Useful for
         single-ticker processing or when you need strict validation. Defaults to False.
+    include_macd : bool, optional
+        Whether to compute MACD indicator. Defaults to True.
+    include_bollinger_bands : bool, optional
+        Whether to compute Bollinger Bands indicator. Defaults to True.
+    include_rsi : bool, optional
+        Whether to compute RSI indicator. Defaults to True.
+    macd_params : tuple of int, optional
+        MACD parameters (fast, slow, signal). Defaults to (12, 26, 9).
+    bb_params : tuple of (int, float), optional
+        Bollinger Bands parameters (window, num_std). Defaults to (20, 2.0).
+    rsi_window : int, optional
+        RSI calculation window. Defaults to 14.
 
     Returns
     -------
     pandas.DataFrame
         Wide DataFrame with columns:
         ['date', 'ticker', 'open', 'high', 'low', 'close',
-         'adj_close', 'volume', 'return', 'volatility', ema_span].
+         'adj_close', 'volume', 'return', 'volatility', ema_span, 
+         macd_columns, bb_columns, 'rsi'].
     '''
     if data.empty:
         logger.warning('No data to process')
@@ -204,6 +329,18 @@ def calculate_financial_metrics(
             )
 
             result = pd.concat([result, emas], axis=1)
+            
+            # Add technical indicators
+            if include_macd:
+                macd_data = _compute_macd(sub[price_col], *macd_params)
+                result = pd.concat([result, macd_data], axis=1)
+            
+            if include_bollinger_bands:
+                bb_data = _compute_bollinger_bands(sub[price_col], *bb_params)
+                result = pd.concat([result, bb_data], axis=1)
+            
+            if include_rsi:
+                result['rsi'] = _compute_rsi(sub[price_col], window=rsi_window)
             # Use the actual ticker value, or get it from the data if available
             if ticker:
                 result['ticker'] = ticker

@@ -358,13 +358,36 @@ def transform_ticker_data(extract_result: Dict[str, Any], **context) -> Dict[str
         ema_spans = Variable.get('EMA_SPANS', [9, 20, 50], deserialize_json=True)
         volatility_window = Variable.get('VOLATILITY_WINDOW', 21, deserialize_json=False)
         
+        # Get technical indicator parameters (optional)
+        include_macd = Variable.get('INCLUDE_MACD', True, deserialize_json=False)
+        include_bollinger_bands = Variable.get('INCLUDE_BOLLINGER_BANDS', True, deserialize_json=False)
+        include_rsi = Variable.get('INCLUDE_RSI', True, deserialize_json=False)
+        macd_params = Variable.get('MACD_PARAMS', [12, 26, 9], deserialize_json=True)
+        bb_params = Variable.get('BB_PARAMS', [20, 2.0], deserialize_json=True)
+        rsi_window = Variable.get('RSI_WINDOW', 14, deserialize_json=False)
+        
+        # Convert string booleans to actual booleans
+        if isinstance(include_macd, str):
+            include_macd = include_macd.lower() == 'true'
+        if isinstance(include_bollinger_bands, str):
+            include_bollinger_bands = include_bollinger_bands.lower() == 'true'
+        if isinstance(include_rsi, str):
+            include_rsi = include_rsi.lower() == 'true'
+        
         logger.info(f'Applying transformations for {ticker}: EMA spans {ema_spans}, volatility window {volatility_window}')
+        logger.info(f'Technical indicators for {ticker}: MACD={include_macd}, Bollinger={include_bollinger_bands}, RSI={include_rsi}')
         
         # Transform the data
         metrics = calculate_financial_metrics(
             df, 
             ema_spans=ema_spans, 
             volatility_window=int(volatility_window),
+            include_macd=include_macd,
+            include_bollinger_bands=include_bollinger_bands,
+            include_rsi=include_rsi,
+            macd_params=tuple(macd_params),
+            bb_params=tuple(bb_params),
+            rsi_window=int(rsi_window),
             validate_columns=True
         )
         

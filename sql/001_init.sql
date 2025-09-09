@@ -9,9 +9,21 @@ CREATE TABLE IF NOT EXISTS price_metrics (
     volume      BIGINT,
     return      NUMERIC(18,10),
     volatility  NUMERIC(18,10),
-    ema_9      NUMERIC(18,6),
+    ema_9       NUMERIC(18,6),
     ema_20      NUMERIC(18,6),
     ema_50      NUMERIC(18,6),
+    -- MACD indicators
+    macd        NUMERIC(18,10),
+    macd_signal NUMERIC(18,10),
+    macd_histogram NUMERIC(18,10),
+    -- Bollinger Bands
+    bb_middle   NUMERIC(18,6),
+    bb_upper    NUMERIC(18,6),
+    bb_lower    NUMERIC(18,6),
+    bb_width    NUMERIC(18,10),
+    bb_position NUMERIC(18,10),
+    -- RSI
+    rsi         NUMERIC(18,6),
     PRIMARY KEY (ticker, date)
 );
 

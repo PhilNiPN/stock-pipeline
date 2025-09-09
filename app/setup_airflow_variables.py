@@ -32,7 +32,14 @@ def setup_airflow_variables():
         'TABLE_NAME': 'price_metrics',
         'LOOKBACK_DAYS': '10',
         'EMA_SPANS': '[9, 20, 50]',
-        'VOLATILITY_WINDOW': '21'
+        'VOLATILITY_WINDOW': '21',
+        # Technical Indicators (optional - defaults are used if not set)
+        'INCLUDE_MACD': 'true',
+        'INCLUDE_BOLLINGER_BANDS': 'true', 
+        'INCLUDE_RSI': 'true',
+        'MACD_PARAMS': '[12, 26, 9]',
+        'BB_PARAMS': '[20, 2.0]',
+        'RSI_WINDOW': '14'
     }
     
     print("🔧 Setting up Airflow variables for stock pipeline...")

@@ -14,6 +14,9 @@ from src.transform import (
     _compute_returns,
     _compute_volatility,
     _compute_emas,
+    _compute_macd,
+    _compute_bollinger_bands,
+    _compute_rsi,
     calculate_financial_metrics
 )
 
@@ -346,3 +349,272 @@ class TestCalculateFinancialMetrics:
             'ema_9', 'ema_20', 'ema_50'
         }
         assert expected_cols.issubset(set(metrics.columns))
+
+    def test_calculate_financial_metrics_with_technical_indicators(self):
+        """Test financial metrics calculation with technical indicators enabled."""
+        metrics = calculate_financial_metrics(
+            self.single_ticker_data,
+            include_macd=True,
+            include_bollinger_bands=True,
+            include_rsi=True
+        )
+        
+        # Check that technical indicator columns are present
+        technical_cols = {
+            'macd', 'macd_signal', 'macd_histogram',
+            'bb_middle', 'bb_upper', 'bb_lower', 'bb_width', 'bb_position',
+            'rsi'
+        }
+        assert technical_cols.issubset(set(metrics.columns))
+        
+        # Check that indicators are calculated (may have NaN values for insufficient data)
+        assert 'macd' in metrics.columns
+        assert 'bb_middle' in metrics.columns
+        assert 'rsi' in metrics.columns
+
+    def test_calculate_financial_metrics_without_technical_indicators(self):
+        """Test financial metrics calculation with technical indicators disabled."""
+        metrics = calculate_financial_metrics(
+            self.single_ticker_data,
+            include_macd=False,
+            include_bollinger_bands=False,
+            include_rsi=False
+        )
+        
+        # Check that technical indicator columns are NOT present
+        technical_cols = {
+            'macd', 'macd_signal', 'macd_histogram',
+            'bb_middle', 'bb_upper', 'bb_lower', 'bb_width', 'bb_position',
+            'rsi'
+        }
+        assert not technical_cols.intersection(set(metrics.columns))
+        
+        # Should still have basic columns
+        basic_cols = {
+            'date', 'ticker', 'open', 'high', 'low', 'close', 
+            'adj_close', 'volume', 'return', 'volatility', 
+            'ema_9', 'ema_20', 'ema_50'
+        }
+        assert basic_cols.issubset(set(metrics.columns))
+
+    def test_calculate_financial_metrics_custom_technical_parameters(self):
+        """Test financial metrics with custom technical indicator parameters."""
+        metrics = calculate_financial_metrics(
+            self.single_ticker_data,
+            include_macd=True,
+            include_bollinger_bands=True,
+            include_rsi=True,
+            macd_params=(5, 10, 3),  # fast, slow, signal
+            bb_params=(10, 1.5),     # window, num_std
+            rsi_window=7
+        )
+        
+        # Should still have all technical indicator columns
+        technical_cols = {
+            'macd', 'macd_signal', 'macd_histogram',
+            'bb_middle', 'bb_upper', 'bb_lower', 'bb_width', 'bb_position',
+            'rsi'
+        }
+        assert technical_cols.issubset(set(metrics.columns))
+
+
+class TestComputeMACD:
+    """Test cases for the _compute_macd function."""
+
+    def test_compute_macd_basic(self):
+        """Test basic MACD calculation."""
+        prices = pd.Series([100, 102, 101, 103, 105, 104, 106, 108, 107, 109], name='price')
+        macd_data = _compute_macd(prices, fast=3, slow=5, signal=2)
+        
+        # Check expected columns
+        assert 'macd' in macd_data.columns
+        assert 'macd_signal' in macd_data.columns
+        assert 'macd_histogram' in macd_data.columns
+        assert len(macd_data) == len(prices)
+        
+        # Check data types
+        assert macd_data['macd'].dtype in ['float64', 'float32']
+        assert macd_data['macd_signal'].dtype in ['float64', 'float32']
+        assert macd_data['macd_histogram'].dtype in ['float64', 'float32']
+
+    def test_compute_macd_custom_parameters(self):
+        """Test MACD calculation with custom parameters."""
+        prices = pd.Series([100, 102, 101, 103, 105, 104, 106, 108, 107, 109], name='price')
+        macd_data = _compute_macd(prices, fast=2, slow=4, signal=3)
+        
+        # Should still have all required columns
+        assert 'macd' in macd_data.columns
+        assert 'macd_signal' in macd_data.columns
+        assert 'macd_histogram' in macd_data.columns
+
+    def test_compute_macd_histogram_calculation(self):
+        """Test that MACD histogram is calculated correctly."""
+        prices = pd.Series([100, 102, 101, 103, 105, 104, 106, 108, 107, 109], name='price')
+        macd_data = _compute_macd(prices, fast=3, slow=5, signal=2)
+        
+        # Histogram should be MACD - Signal
+        expected_histogram = macd_data['macd'] - macd_data['macd_signal']
+        pd.testing.assert_series_equal(macd_data['macd_histogram'], expected_histogram, check_names=False)
+
+    def test_compute_macd_constant_prices(self):
+        """Test MACD calculation with constant prices."""
+        prices = pd.Series([100, 100, 100, 100, 100], name='price')
+        macd_data = _compute_macd(prices, fast=2, slow=3, signal=2)
+        
+        # MACD should be 0 for constant prices
+        assert all(macd_data['macd'] == 0)
+        assert all(macd_data['macd_signal'] == 0)
+        assert all(macd_data['macd_histogram'] == 0)
+
+    def test_compute_macd_insufficient_data(self):
+        """Test MACD calculation with insufficient data."""
+        prices = pd.Series([100, 102], name='price')
+        macd_data = _compute_macd(prices, fast=2, slow=3, signal=2)
+        
+        # Should still return DataFrame with correct structure
+        assert 'macd' in macd_data.columns
+        assert 'macd_signal' in macd_data.columns
+        assert 'macd_histogram' in macd_data.columns
+        assert len(macd_data) == len(prices)
+
+
+class TestComputeBollingerBands:
+    """Test cases for the _compute_bollinger_bands function."""
+
+    def test_compute_bollinger_bands_basic(self):
+        """Test basic Bollinger Bands calculation."""
+        prices = pd.Series([100, 102, 101, 103, 105, 104, 106, 108, 107, 109], name='price')
+        bb_data = _compute_bollinger_bands(prices, window=5, num_std=2.0)
+        
+        # Check expected columns
+        assert 'bb_middle' in bb_data.columns
+        assert 'bb_upper' in bb_data.columns
+        assert 'bb_lower' in bb_data.columns
+        assert 'bb_width' in bb_data.columns
+        assert 'bb_position' in bb_data.columns
+        assert len(bb_data) == len(prices)
+
+    def test_compute_bollinger_bands_relationships(self):
+        """Test that Bollinger Bands relationships are correct."""
+        prices = pd.Series([100, 102, 101, 103, 105, 104, 106, 108, 107, 109], name='price')
+        bb_data = _compute_bollinger_bands(prices, window=5, num_std=2.0)
+        
+        # Upper band should be >= middle band >= lower band
+        valid_data = bb_data.dropna()
+        assert all(valid_data['bb_upper'] >= valid_data['bb_middle'])
+        assert all(valid_data['bb_middle'] >= valid_data['bb_lower'])
+
+    def test_compute_bollinger_bands_width_calculation(self):
+        """Test that BB width is calculated correctly."""
+        prices = pd.Series([100, 102, 101, 103, 105, 104, 106, 108, 107, 109], name='price')
+        bb_data = _compute_bollinger_bands(prices, window=5, num_std=2.0)
+        
+        # Width should be (upper - lower) / middle
+        valid_data = bb_data.dropna()
+        expected_width = (valid_data['bb_upper'] - valid_data['bb_lower']) / valid_data['bb_middle']
+        pd.testing.assert_series_equal(valid_data['bb_width'], expected_width, check_names=False)
+
+    def test_compute_bollinger_bands_position_calculation(self):
+        """Test that BB position is calculated correctly."""
+        prices = pd.Series([100, 102, 101, 103, 105, 104, 106, 108, 107, 109], name='price')
+        bb_data = _compute_bollinger_bands(prices, window=5, num_std=2.0)
+        
+        # Position should be (price - lower) / (upper - lower)
+        valid_data = bb_data.dropna()
+        expected_position = (prices.loc[valid_data.index] - valid_data['bb_lower']) / (valid_data['bb_upper'] - valid_data['bb_lower'])
+        pd.testing.assert_series_equal(valid_data['bb_position'], expected_position, check_names=False)
+
+    def test_compute_bollinger_bands_custom_parameters(self):
+        """Test Bollinger Bands with custom parameters."""
+        prices = pd.Series([100, 102, 101, 103, 105, 104, 106, 108, 107, 109], name='price')
+        bb_data = _compute_bollinger_bands(prices, window=3, num_std=1.5)
+        
+        # Should still have all required columns
+        assert 'bb_middle' in bb_data.columns
+        assert 'bb_upper' in bb_data.columns
+        assert 'bb_lower' in bb_data.columns
+        assert 'bb_width' in bb_data.columns
+        assert 'bb_position' in bb_data.columns
+
+    def test_compute_bollinger_bands_constant_prices(self):
+        """Test Bollinger Bands with constant prices."""
+        prices = pd.Series([100, 100, 100, 100, 100], name='price')
+        bb_data = _compute_bollinger_bands(prices, window=3, num_std=2.0)
+        
+        # All bands should be equal for constant prices
+        valid_data = bb_data.dropna()
+        assert all(valid_data['bb_upper'] == valid_data['bb_middle'])
+        assert all(valid_data['bb_middle'] == valid_data['bb_lower'])
+        assert all(valid_data['bb_width'] == 0)
+
+
+class TestComputeRSI:
+    """Test cases for the _compute_rsi function."""
+
+    def test_compute_rsi_basic(self):
+        """Test basic RSI calculation."""
+        prices = pd.Series([100, 102, 101, 103, 105, 104, 106, 108, 107, 109], name='price')
+        rsi = _compute_rsi(prices, window=5)
+        
+        # Check data type and length
+        assert isinstance(rsi, pd.Series)
+        assert len(rsi) == len(prices)
+        assert rsi.dtype in ['float64', 'float32']
+
+    def test_compute_rsi_range(self):
+        """Test that RSI values are within valid range (0-100)."""
+        prices = pd.Series([100, 102, 101, 103, 105, 104, 106, 108, 107, 109, 110, 111, 112, 113, 114], name='price')
+        rsi = _compute_rsi(prices, window=5)
+        
+        # RSI should be between 0 and 100
+        valid_rsi = rsi.dropna()
+        assert all(valid_rsi >= 0)
+        assert all(valid_rsi <= 100)
+
+    def test_compute_rsi_constant_prices(self):
+        """Test RSI calculation with constant prices."""
+        prices = pd.Series([100, 100, 100, 100, 100], name='price')
+        rsi = _compute_rsi(prices, window=3)
+        
+        # RSI should be 50 for constant prices (neutral)
+        valid_rsi = rsi.dropna()
+        assert all(valid_rsi == 50)
+
+    def test_compute_rsi_uptrend(self):
+        """Test RSI calculation with uptrending prices."""
+        prices = pd.Series([100, 101, 102, 103, 104, 105, 106, 107, 108, 109], name='price')
+        rsi = _compute_rsi(prices, window=5)
+        
+        # RSI should be high (>50) for uptrending prices
+        valid_rsi = rsi.dropna()
+        assert all(valid_rsi > 50)
+
+    def test_compute_rsi_downtrend(self):
+        """Test RSI calculation with downtrending prices."""
+        prices = pd.Series([109, 108, 107, 106, 105, 104, 103, 102, 101, 100], name='price')
+        rsi = _compute_rsi(prices, window=5)
+        
+        # RSI should be low (<50) for downtrending prices
+        valid_rsi = rsi.dropna()
+        assert all(valid_rsi < 50)
+
+    def test_compute_rsi_custom_window(self):
+        """Test RSI calculation with custom window."""
+        prices = pd.Series([100, 102, 101, 103, 105, 104, 106, 108, 107, 109], name='price')
+        rsi = _compute_rsi(prices, window=3)
+        
+        # Should still return valid RSI values
+        assert isinstance(rsi, pd.Series)
+        assert len(rsi) == len(prices)
+        valid_rsi = rsi.dropna()
+        assert all(valid_rsi >= 0)
+        assert all(valid_rsi <= 100)
+
+    def test_compute_rsi_insufficient_data(self):
+        """Test RSI calculation with insufficient data."""
+        prices = pd.Series([100, 102], name='price')
+        rsi = _compute_rsi(prices, window=5)
+        
+        # Should still return Series with correct length
+        assert isinstance(rsi, pd.Series)
+        assert len(rsi) == len(prices)

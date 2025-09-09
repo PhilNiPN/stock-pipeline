@@ -41,6 +41,18 @@ CREATE TABLE IF NOT EXISTS {table} (
     ema_9       NUMERIC(18,6),
     ema_20      NUMERIC(18,6),
     ema_50      NUMERIC(18,6),
+    -- MACD indicators
+    macd        NUMERIC(18,10),
+    macd_signal NUMERIC(18,10),
+    macd_histogram NUMERIC(18,10),
+    -- Bollinger Bands
+    bb_middle   NUMERIC(18,6),
+    bb_upper    NUMERIC(18,6),
+    bb_lower    NUMERIC(18,6),
+    bb_width    NUMERIC(18,10),
+    bb_position NUMERIC(18,10),
+    -- RSI
+    rsi         NUMERIC(18,6),
     PRIMARY KEY (ticker, date)
 );
 '''
@@ -48,7 +60,10 @@ CREATE TABLE IF NOT EXISTS {table} (
 UPSERT_SQL = '''
 INSERT INTO {table} (
     date, ticker, open, high, low, close, adj_close, volume,
-    return, volatility, ema_9, ema_20, ema_50
+    return, volatility, ema_9, ema_20, ema_50,
+    macd, macd_signal, macd_histogram,
+    bb_middle, bb_upper, bb_lower, bb_width, bb_position,
+    rsi
 ) VALUES %s
 ON CONFLICT (ticker, date) DO UPDATE SET
     open       = EXCLUDED.open,
@@ -61,12 +76,24 @@ ON CONFLICT (ticker, date) DO UPDATE SET
     volatility = EXCLUDED.volatility,
     ema_9      = EXCLUDED.ema_9,
     ema_20     = EXCLUDED.ema_20,
-    ema_50     = EXCLUDED.ema_50;
+    ema_50     = EXCLUDED.ema_50,
+    macd       = EXCLUDED.macd,
+    macd_signal = EXCLUDED.macd_signal,
+    macd_histogram = EXCLUDED.macd_histogram,
+    bb_middle  = EXCLUDED.bb_middle,
+    bb_upper   = EXCLUDED.bb_upper,
+    bb_lower   = EXCLUDED.bb_lower,
+    bb_width   = EXCLUDED.bb_width,
+    bb_position = EXCLUDED.bb_position,
+    rsi        = EXCLUDED.rsi;
 '''
 
 COLUMNS = [
     'date', 'ticker', 'open', 'high', 'low', 'close', 'adj_close', 'volume',
-    'return', 'volatility', 'ema_9', 'ema_20', 'ema_50'
+    'return', 'volatility', 'ema_9', 'ema_20', 'ema_50',
+    'macd', 'macd_signal', 'macd_histogram',
+    'bb_middle', 'bb_upper', 'bb_lower', 'bb_width', 'bb_position',
+    'rsi'
 ]
 
 def _to_records(df: pd.DataFrame) -> List[Tuple]:
