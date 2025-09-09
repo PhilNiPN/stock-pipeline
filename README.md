@@ -36,13 +36,16 @@ All services — PostgreSQL, Airflow, Streamlit, and Python application code —
   - Daily returns
   - Rolling annualized volatility
   - Exponential Moving Averages (EMA 9, 20, 50)
+  - **MACD (Moving Average Convergence Divergence)**: Momentum indicator with signal line and histogram
+  - **Bollinger Bands**: Volatility bands with upper, middle, and lower bands plus width and position metrics
+  - **RSI (Relative Strength Index)**: Momentum oscillator for overbought/oversold conditions
   - Candlestick metrics
 - **Idempotent Database Loading**: PostgreSQL upserts with conflict resolution ensure safe re-runs.
 - **Airflow Orchestration**:
   - TaskFlow API for clean DAG design
   - Dynamic task mapping (parallel processing per ticker)
   - Bootstrap DAG for backfilling historical data
-- **Interactive Dashboard**: Streamlit + Plotly for candlestick charts, EMA overlays, and date-range filtering.
+- **Interactive Dashboard**: Streamlit + Plotly for candlestick charts, EMA overlays, technical indicators (MACD, RSI, Bollinger Bands), and date-range filtering with real-time technical analysis summary.
 - **Containerized Deployment**: Consistent local/prod environment with isolated services.
 - **Testing Framework**: Comprehensive pytest suite with coverage options and custom test runner.
 
@@ -73,6 +76,7 @@ Yahoo Finance API → Extract → Transform → PostgreSQL → Streamlit Dashboa
 
 - **Transform**: Pandas-based calculations for financial metrics and technical indicators
   - Computes daily returns, rolling volatility (21-day window), and EMAs (9, 20, 50 periods)
+  - **Advanced Technical Indicators**: MACD (12,26,9), Bollinger Bands (20,2.0), RSI (14-period)
   - Uses vectorized operations for performance and memory efficiency
   - Implements data validation with configurable parameters via Airflow Variables
 
@@ -88,10 +92,13 @@ Yahoo Finance API → Extract → Transform → PostgreSQL → Streamlit Dashboa
   - Uses file-based data passing to bypass XCom size limits  
   - Includes automatic cleanup of temporary files and rich logging/monitoring  
 
-- **Visualize**: Streamlit dashboard with interactive candlestick charts and EMAs
+- **Visualize**: Streamlit dashboard with interactive candlestick charts and comprehensive technical analysis
   - Streamlit dashboard backed by live PostgreSQL queries
-  - Provides candlestick charts, EMA overlays, volume bars, and date range filtering
-  - Uses Plotly for high-quality, interactive financial charts
+  - **Multi-Chart Layout**: Candlestick charts with EMA overlays, separate MACD and RSI charts, volume bars
+  - **Bollinger Bands**: Overlaid on price charts with upper, middle, and lower bands
+  - **Technical Analysis Summary**: Real-time metrics showing RSI status, MACD signals, Bollinger Band position, and volatility
+  - **Interactive Controls**: Toggle indicators on/off, customizable date ranges, and educational help sections
+  - Uses Plotly for high-quality, interactive financial charts with professional styling
 
 ##  Data Model
 
@@ -117,7 +124,18 @@ The central fact table combines raw OHLCV stock data with technical indicators f
 - **`volatility`**: 21-day rolling annualized volatility (NUMERIC(18,10))
 - **`ema_9`**: 9-period Exponential Moving Average (NUMERIC(18,6))
 - **`ema_20`**: 20-period Exponential Moving Average (NUMERIC(18,6))
-- **`ema_50`**: 50-period Exponential Moving Average (NUMERIC(18,6)) 
+- **`ema_50`**: 50-period Exponential Moving Average (NUMERIC(18,6))
+
+#### Technical Indicators
+- **`macd`**: MACD line (12-EMA - 26-EMA) (NUMERIC(18,10))
+- **`macd_signal`**: MACD signal line (9-EMA of MACD) (NUMERIC(18,10))
+- **`macd_histogram`**: MACD histogram (MACD - Signal) (NUMERIC(18,10))
+- **`bb_middle`**: Bollinger Bands middle (20-period SMA) (NUMERIC(18,6))
+- **`bb_upper`**: Bollinger Bands upper (middle + 2*std) (NUMERIC(18,6))
+- **`bb_lower`**: Bollinger Bands lower (middle - 2*std) (NUMERIC(18,6))
+- **`bb_width`**: Bollinger Bands width as percentage (NUMERIC(18,10))
+- **`bb_position`**: Price position within bands (0-1 scale) (NUMERIC(18,10))
+- **`rsi`**: 14-period Relative Strength Index (0-100) (NUMERIC(18,6)) 
 
 #### Data Characteristics
 - **Precision**: 6 decimal places for prices, 10 for returns/volatility
@@ -199,26 +217,95 @@ python tests/run_tests.py --coverage
 python tests/run_tests.py --test-file test_extract.py
 ```
 
+### Test Coverage
+The test suite includes comprehensive coverage for:
+- **ETL Components**: Extract, transform, and load operations
+- **Technical Indicators**: MACD, Bollinger Bands, and RSI calculations
+- **Data Validation**: Schema validation and data quality checks
+- **Edge Cases**: Insufficient data, constant prices, and error conditions
+- **Integration Tests**: End-to-end pipeline validation
+
+##  Technical Indicators Implementation
+
+### **MACD (Moving Average Convergence Divergence)**
+- **Calculation**: Fast EMA (12) - Slow EMA (26), Signal line (9-EMA of MACD)
+- **Components**: MACD line, signal line, and histogram
+- **Usage**: Momentum analysis and trend change detection
+- **Parameters**: Configurable via `MACD_PARAMS` Airflow variable
+
+### **Bollinger Bands**
+- **Calculation**: 20-period SMA with ±2 standard deviation bands
+- **Components**: Upper band, middle band, lower band, width, and position
+- **Usage**: Volatility analysis and overbought/oversold conditions
+- **Parameters**: Configurable via `BB_PARAMS` Airflow variable
+
+### **RSI (Relative Strength Index)**
+- **Calculation**: 14-period Wilder's smoothing of gains vs losses
+- **Range**: 0-100 scale with 70 (overbought) and 30 (oversold) levels
+- **Usage**: Momentum oscillator for trend strength analysis
+- **Parameters**: Configurable via `RSI_WINDOW` Airflow variable
+
+### **Mathematical Accuracy**
+- **RSI**: Uses Wilder's smoothing (exponential moving average) for accurate calculation
+- **MACD**: Standard 12,26,9 parameters with proper EMA calculations
+- **Bollinger Bands**: Standard 20-period SMA with 2 standard deviations
+- **Validation**: All indicators tested with known values and edge cases
+
 ##  Dashboard Features
 
-The Streamlit dashboard provides:
-- **Interactive Charts**: Candlestick patterns with volume
-- **Technical Overlays**: Configurable EMA indicators
-- **Date Range Selection**: Flexible time period analysis
-- **Real-time Data**: Live database queries with caching
+The Streamlit dashboard provides comprehensive technical analysis capabilities:
+
+### **Chart Types**
+- **Candlestick Charts**: Professional OHLC visualization with volume bars
+- **MACD Chart**: MACD line, signal line, and histogram with zero-line reference
+- **RSI Chart**: Relative Strength Index with overbought (70) and oversold (30) levels
+- **Bollinger Bands**: Overlaid on price charts with upper, middle, and lower bands
+
+### **Interactive Controls**
+- **Indicator Toggles**: Enable/disable MACD, Bollinger Bands, and RSI independently
+- **EMA Overlays**: Configurable EMA 9, 20, and 50 with adjustable line width
+- **Date Range Selection**: Flexible time period analysis with start/end date pickers
+- **Ticker Selection**: Dynamic dropdown with all available tickers from database
+
+### **Technical Analysis Summary**
+- **Real-time Metrics**: Current price, daily return, and volatility
+- **RSI Status**: Overbought/Oversold/Neutral with current value
+- **MACD Signals**: Bullish/Bearish based on MACD vs Signal line relationship
+- **Bollinger Band Position**: Above Upper/Below Lower/Within Bands
+- **EMA Relationships**: EMA 9 vs EMA 20 trend analysis
+
+### **Educational Features**
+- **Help Documentation**: Expandable sections explaining each indicator
+- **Trading Signals**: Interpretation guidelines for overbought/oversold conditions
+- **Visual Cues**: Color-coded indicators and professional styling
+
+### **Performance**
+- **Real-time Data**: Live database queries with intelligent caching
+- **Responsive Layout**: Dynamic chart sizing based on selected indicators
+- **Professional Styling**: High-quality Plotly charts with consistent theming
 
 ![Dashboard Example 1](streamlit-dashboard-1.png)
-![Dashboard Example 2](streamlit-dashboard-2.png)
+![Dashboard Example 2](streamlit-dashboard-3.png)
 
 ##  Configuration
 
 ### Airflow Variables
+
+#### Core Configuration
 - `TICKERS`: Comma-separated stock symbols (e.g., "NVDA,AAPL,MSFT,GOOGL")
 - `INTERVAL`: Data frequency (1d, 1wk, 1mo)
 - `TABLE_NAME`: Target database table (default: "price_metrics")
 - `LOOKBACK_DAYS`: Days to look back for incremental updates (default: 10)
 - `EMA_SPANS`: JSON array of EMA periods [9, 20, 50]
 - `VOLATILITY_WINDOW`: Rolling window for volatility calculation (default: 21)
+
+#### Technical Indicators 
+- `INCLUDE_MACD`: Enable/disable MACD calculation (default: true)
+- `INCLUDE_BOLLINGER_BANDS`: Enable/disable Bollinger Bands (default: true)
+- `INCLUDE_RSI`: Enable/disable RSI calculation (default: true)
+- `MACD_PARAMS`: JSON array [fast, slow, signal] periods (default: [12, 26, 9])
+- `BB_PARAMS`: JSON array [window, std_dev] (default: [20, 2.0])
+- `RSI_WINDOW`: RSI calculation period (default: 14)
 
 ### Environment Variables
 - **Database**: PostgreSQL connection parameters (user, password, database, port)
@@ -278,8 +365,8 @@ This project showcases advanced data engineering capabilities:
 ### Near-term improvements
 - **Exponential Backoff & Smarter Retries**: More resilient API calls using Airflow's retry_exponential_backoff or Tenacity.  
 - **Advanced Data Validation**: Pandera-based schema validation, data quality scoring, and outlier detection.  
-- **Expanded Technical Indicators**: Add RSI, MACD, Bollinger Bands, and VWAP for richer financial analysis.  
-- **Enhanced Dashboard Features**: Add multi-ticker comparison mode, performance summaries, and export to CSV/Excel.  
+- **Additional Technical Indicators**: VWAP, Stochastic Oscillator, Williams %R, and Ichimoku Cloud for comprehensive analysis.  
+- **Enhanced Dashboard Features**: Multi-ticker comparison mode, performance summaries, export to CSV/Excel, and alert notifications.  
 - **Performance Optimization**: Query optimization, additional database indexes, and connection pooling.  
 - **CI/CD Integration**: GitHub Actions pipeline to run tests, linting, and container builds on every commit
 
@@ -287,7 +374,7 @@ This project showcases advanced data engineering capabilities:
 - **Real-time Streaming**: Integrate Apache Kafka or Redpanda to capture intraday tick data.  
 - **Machine Learning Signals**: Incorporate models for price forecasting or anomaly detection.  
 - **Multi-Asset Support**: Extend beyond equities to ETFs, FX, or crypto.  
-- **Cloud Deployment**: Container orchestration on AWS ECS/EKS or GCP GKE with managed Postgres.  
+- **Cloud Deployment**: Container orchestration on AWS ECS/EKS or GCP GKE or Azure with free tier options.  
 - **Production Monitoring**: Add Prometheus/Grafana dashboards, Airflow SLAs, and alerts on data freshness.
 - **Data Security & Compliance**: Row-level security, audit logging, and data retention policies.
 - **Disaster Recovery**: Automated backups, point-in-time recovery, and multi-region deployment.
