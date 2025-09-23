@@ -101,12 +101,14 @@ def _to_records(df: pd.DataFrame) -> List[Tuple]:
 
     Ensures:
       - 'date' is converted to Python date objects,
-      - columns are in the expected COLUMNS order.
+      - columns are in the expected COLUMNS order,
+      - missing columns are filled with None values.
 
     Parameters
     ----------
     df : pandas.DataFrame
-        Data with at least the columns listed in COLUMNS.
+        Data with at least 'date' and 'ticker' columns. Missing columns from 
+        COLUMNS will be filled with None values.
 
     Returns
     -------
@@ -115,6 +117,12 @@ def _to_records(df: pd.DataFrame) -> List[Tuple]:
     '''
     out = df.copy()
     out['date'] = pd.to_datetime(out['date']).dt.date
+    
+    # Add any missing columns with None values
+    for col in COLUMNS:
+        if col not in out.columns:
+            out[col] = None
+    
     out = out[COLUMNS]
     return list(map(tuple, out.itertuples(index=False, name=None)))
 
