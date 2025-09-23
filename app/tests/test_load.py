@@ -72,9 +72,18 @@ class TestToRecords:
             # Missing other columns
         })
         
-        # Should raise KeyError for missing columns
-        with pytest.raises(KeyError):
-            _to_records(df)
+        # Should fill missing columns with None values and not raise KeyError
+        records = _to_records(df)
+        assert len(records) == 2
+        assert len(records[0]) == len(COLUMNS)  # All columns should be present
+        
+        # Check that missing columns are filled with None
+        # Find indices of columns in COLUMNS
+        open_idx = COLUMNS.index('open')
+        high_idx = COLUMNS.index('high')  # This should be None since it's missing
+        
+        assert records[0][open_idx] == 100.0  # Open value should be preserved
+        assert records[0][high_idx] is None   # High should be None
 
     def test_to_records_date_conversion(self):
         """Test that dates are properly converted."""
@@ -387,11 +396,14 @@ class TestColumns:
         expected_columns = [
             'date', 'ticker', 'open', 'high', 'low', 'close',
             'adj_close', 'volume', 'return', 'volatility',
-            'ema_9', 'ema_20', 'ema_50'
+            'ema_9', 'ema_20', 'ema_50',
+            'macd', 'macd_signal', 'macd_histogram',
+            'bb_middle', 'bb_upper', 'bb_lower', 'bb_width', 'bb_position',
+            'rsi'
         ]
         
         assert COLUMNS == expected_columns
 
     def test_columns_length(self):
         """Test that COLUMNS has the correct length."""
-        assert len(COLUMNS) == 13
+        assert len(COLUMNS) == 22
