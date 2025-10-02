@@ -242,6 +242,16 @@ fig.update_xaxes(showspikes=True, spikesnap="cursor", spikemode="across")
 
 st.plotly_chart(fig, use_container_width=True)
 
+# Hide default arrows in st.metric deltas (we'll control arrows via text)
+st.markdown(
+    """
+    <style>
+    [data-testid="stMetricDelta"] svg {display: none;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # Technical Indicators Summary
 if not df.empty:
     st.subheader("Technical Indicators Summary")
@@ -258,20 +268,38 @@ if not df.empty:
     with col2:
         if 'rsi' in df.columns and not pd.isna(latest['rsi']):
             rsi_value = latest['rsi']
-            rsi_status = "Overbought" if rsi_value > 70 else "Oversold" if rsi_value < 30 else "Neutral"
-            st.metric("RSI", f"{rsi_value:.1f}", rsi_status)
-        
+            # Bubble with colored status text, no arrow (hidden via CSS)
+            if rsi_value > 70:
+                rsi_delta = "- Overbought"  # red
+            elif rsi_value < 30:
+                rsi_delta = "+ Oversold"    # green
+            else:
+                rsi_delta = "Neutral"        # gray
+            st.metric("RSI", f"{rsi_value:.1f}", delta=rsi_delta, delta_color="normal")
+
         if 'bb_position' in df.columns and not pd.isna(latest['bb_position']):
             bb_pos = latest['bb_position']
-            bb_status = "Above Upper" if bb_pos > 1 else "Below Lower" if bb_pos < 0 else "Within Bands"
-            st.metric("BB Position", f"{bb_pos:.2f}", bb_status)
+            # Map to Oversold / Neutral / Overbought bubble, no arrow (hidden via CSS)
+            if bb_pos < 0:
+                bb_delta = "+ Oversold"      # green
+            elif bb_pos > 1:
+                bb_delta = "- Overbought"    # red
+            elif abs(bb_pos - 0.5) <= 0.1:
+                bb_delta = "Neutral"         # gray
+            elif bb_pos < 0.5:
+                bb_delta = "+ Oversold"      # green
+            else:
+                bb_delta = "- Overbought"    # red
+            st.metric("BB Position", f"{bb_pos:.2f}", delta=bb_delta, delta_color="normal")
     
     with col3:
         if 'macd' in df.columns and not pd.isna(latest['macd']):
             macd_value = latest['macd']
             macd_signal = latest.get('macd_signal', 0) if not pd.isna(latest.get('macd_signal')) else 0
-            macd_status = "Bullish" if macd_value > macd_signal else "Bearish"
-            st.metric("MACD", f"{macd_value:.4f}", macd_status)
+            macd_delta = float(macd_value - macd_signal)
+            delta_text = "+ ▲ Bullish" if macd_delta > 0 else "- ▼ Bearish"
+            # Use normal mapping; arrow SVG is hidden, we add unicode arrow
+            st.metric("MACD", f"{macd_value:.4f}", delta=delta_text, delta_color="normal")
         
         if 'volatility' in df.columns and not pd.isna(latest['volatility']):
             vol_value = latest['volatility'] * 100
@@ -281,8 +309,10 @@ if not df.empty:
         if 'ema_9' in df.columns and not pd.isna(latest['ema_9']):
             ema9 = latest['ema_9']
             ema20 = latest.get('ema_20', 0) if not pd.isna(latest.get('ema_20')) else 0
-            ema_status = "Above EMA20" if ema9 > ema20 else "Below EMA20"
-            st.metric("EMA 9", f"${ema9:.2f}", ema_status)
+            ema_delta = float(ema9 - ema20)
+            delta_text = "+ ▲ Bullish" if ema_delta > 0 else "- ▼ Bearish"
+            # Use normal mapping; arrow SVG is hidden, we add unicode arrow
+            st.metric("EMA 9 vs 20", f"${ema9:.2f}", delta=delta_text, delta_color="normal")
         
         if 'bb_width' in df.columns and not pd.isna(latest['bb_width']):
             bb_width = latest['bb_width'] * 100
