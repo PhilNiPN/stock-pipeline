@@ -73,7 +73,7 @@ def test_calculate_financial_metrics_simple() -> None:
     assert expected_cols.issubset(metrics.columns)
     # Verify return calculation for the first row
     # returns[0] = (close[1] - close[0]) / close[0] = (102 - 100)/100 = 0.02
-    first_return = metrics.loc[0, 'return']
+    first_return = metrics.iloc[0]['return']
     assert np.isclose(first_return, 0.02)
 
 
