@@ -63,6 +63,67 @@ from src.utils import get_db_config_with_fallback, create_db_engine, validate_da
 import pandas as pd
 
 
+def get_historical_data_for_ticker(
+    ticker: str,
+    end_date: pd.Timestamp,
+    days_needed: int,
+    table_name: str,
+    db_config: Dict[str, Any]
+) -> pd.DataFrame:
+    """Fetch historical stock data from the database to provide context for indicator calculations."""
+    logger = logging.getLogger(__name__)
+    # Extend lookback to account for non-trading days (weekends, holidays)
+    # A 1.5x factor is a reasonable heuristic (5 trading days vs 7 calendar days)
+    start_date = end_date - timedelta(days=days_needed * 1.5)
+    
+    logger.info(f"Fetching historical data for {ticker} from {start_date.date()} to {end_date.date()} for indicator calculation")
+
+    try:
+        engine = create_db_engine(db_config)
+        
+        if not table_name.replace('_', '').isalnum():
+            raise ValueError(f"Invalid table name: {table_name}")
+
+        # Fetch essential columns for technical analysis
+        query = text(f"""
+            SELECT date, open, high, low, close, adj_close, volume
+            FROM {table_name}
+            WHERE ticker = :ticker AND date >= :start_date AND date < :end_date 
+            ORDER BY date ASC
+        """) # for lookback
+        
+        with engine.connect() as conn:
+            # Use pandas to read data directly into a DataFrame
+            df = pd.read_sql(
+                query, 
+                conn, 
+                params={'ticker': ticker, 'start_date': start_date, 'end_date': end_date},
+                index_col='date',
+                parse_dates=['date']
+            )
+        
+        # yfinance uses a 'Date' index name, so we align with that
+        df.index.name = 'Date'
+        
+        # Ensure column names are consistent with yfinance (PascalCase)
+        # Using a specific mapping is more robust than .capitalize()
+        column_mapping = {
+            'open': 'Open',
+            'high': 'High',
+            'low': 'Low',
+            'close': 'Close',
+            'adj_close': 'Adj Close',
+            'volume': 'Volume'
+        }
+        df.rename(columns=column_mapping, inplace=True)
+        
+        logger.info(f"Fetched {len(df)} rows of historical data for {ticker}")
+        return df
+    except Exception as e:
+        logger.warning(f"Could not fetch historical data for {ticker}, proceeding with only new data. Error: {e}")
+        return pd.DataFrame()
+
+
 # Default args for Airflow tasks
 DEFAULT_ARGS = {
     'owner': 'airflow',
@@ -126,12 +187,13 @@ def get_incremental_date_range_for_ticker(
         min_required_lookback = max(20, lookback_days)
         expected_start_date = execution_date - timedelta(days=min_required_lookback)
         
-        if latest_date < expected_start_date.date():
+        # If no prior data exists for this ticker, backfill using expected_start_date
+        if latest_date is None or latest_date < expected_start_date.date():
             # We have a significant historical gap - backfill from expected start to ensure adequate data
             start_date = expected_start_date.strftime('%Y-%m-%d')
             end_date = (execution_date - timedelta(days=1)).strftime('%Y-%m-%d')
             days_to_backfill = (execution_date.date() - expected_start_date.date()).days
-            days_missing = (expected_start_date.date() - latest_date).days
+            days_missing = None if latest_date is None else (expected_start_date.date() - latest_date).days
             logging.info(f'Backfilling historical gap for {ticker}: latest data from {latest_date}, expected from {expected_start_date.date()}')
             logging.info(f'Fetching {days_to_backfill} days total (missing {days_missing} days of historical data)')
         else:
@@ -153,11 +215,12 @@ def get_incremental_date_range_for_ticker(
             if end_date_obj >= today:
                 # Allow reprocessing today's data for manual runs
                 start_date = end_date
+                start_date_obj = end_date_obj
                 logging.info(f'Allowing reprocessing for ticker {ticker} on {start_date}')
             else:
                 logging.info(f'Skipping {ticker}: start_date ({start_date}) > end_date ({end_date}) and end_date is in the past')
                 return None, None
-            
+        
         return start_date, end_date
         
     except Exception as e:
@@ -346,42 +409,65 @@ def transform_ticker_data(extract_result: Dict[str, Any], **context) -> Dict[str
         if not extract_file_path or not os.path.exists(extract_file_path):
             raise ValueError(f"Extracted data file not found for ticker {ticker}: {extract_file_path}")
         
-        # Read DataFrame from Parquet file
-        df = pd.read_parquet(extract_file_path)
-        logger.info(f'Loaded extracted data for {ticker} from {extract_file_path} ({os.path.getsize(extract_file_path)} bytes)')
+        # Read newly extracted DataFrame from Parquet file
+        new_df = pd.read_parquet(extract_file_path)
+        logger.info(f'Loaded newly extracted data for {ticker} from {extract_file_path} ({os.path.getsize(extract_file_path)} bytes)')
         
-        # Debug: Log DataFrame structure
-        logger.info(f'DataFrame shape for {ticker}: {df.shape}')
-        logger.info(f'DataFrame columns for {ticker}: {df.columns.tolist()}')
+        # --- FIX: FLATTEN MULTI-INDEX COLUMNS FROM YFINANCE ---
+        if isinstance(new_df.columns, pd.MultiIndex):
+            logger.info(f"Flattening MultiIndex columns for ticker {ticker}: {new_df.columns.tolist()}")
+            # The first level of the MultiIndex contains the metric names ('Open', 'Close', etc.)
+            new_df.columns = new_df.columns.get_level_values(0)
+            logger.info(f"Columns after flattening: {new_df.columns.tolist()}")
         
+        if new_df.empty:
+            logger.warning(f"No new data for {ticker} to process.")
+            return {**extract_result, 'status': 'skipped', 'reason': 'empty_new_data'}
+
         # Get transformation parameters from Variables
         ema_spans = Variable.get('EMA_SPANS', [9, 20, 50], deserialize_json=True)
-        volatility_window = Variable.get('VOLATILITY_WINDOW', 21, deserialize_json=False)
+        volatility_window = int(Variable.get('VOLATILITY_WINDOW', 21, deserialize_json=False))
         
         # Get technical indicator parameters (optional)
-        include_macd = Variable.get('INCLUDE_MACD', True, deserialize_json=False)
-        include_bollinger_bands = Variable.get('INCLUDE_BOLLINGER_BANDS', True, deserialize_json=False)
-        include_rsi = Variable.get('INCLUDE_RSI', True, deserialize_json=False)
+        include_macd = Variable.get('INCLUDE_MACD', 'true', deserialize_json=False).lower() == 'true'
+        include_bollinger_bands = Variable.get('INCLUDE_BOLLINGER_BANDS', 'true', deserialize_json=False).lower() == 'true'
+        include_rsi = Variable.get('INCLUDE_RSI', 'true', deserialize_json=False).lower() == 'true'
         macd_params = Variable.get('MACD_PARAMS', [12, 26, 9], deserialize_json=True)
         bb_params = Variable.get('BB_PARAMS', [20, 2.0], deserialize_json=True)
-        rsi_window = Variable.get('RSI_WINDOW', 14, deserialize_json=False)
+        rsi_window = int(Variable.get('RSI_WINDOW', 14, deserialize_json=False))
+        table_name = Variable.get('TABLE_NAME', 'price_metrics', deserialize_json=False)
+
+        # Use a fixed 150-day lookback for consistency and performance tuning
+        required_history_days = 150
         
-        # Convert string booleans to actual booleans
-        if isinstance(include_macd, str):
-            include_macd = include_macd.lower() == 'true'
-        if isinstance(include_bollinger_bands, str):
-            include_bollinger_bands = include_bollinger_bands.lower() == 'true'
-        if isinstance(include_rsi, str):
-            include_rsi = include_rsi.lower() == 'true'
+        # Fetch historical data from the database
+        db_config = get_db_config_with_fallback()
+        historical_df = get_historical_data_for_ticker(
+            ticker,
+            end_date=new_df.index.min(),
+            days_needed=required_history_days,
+            table_name=table_name,
+            db_config=db_config
+        )
+
+        # Combine historical data with new data
+        combined_df = pd.concat([historical_df, new_df])
+        # Remove duplicates, keeping the newly fetched data in case of overlap
+        combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
+        combined_df.sort_index(inplace=True)
         
-        logger.info(f'Applying transformations for {ticker}: EMA spans {ema_spans}, volatility window {volatility_window}')
-        logger.info(f'Technical indicators for {ticker}: MACD={include_macd}, Bollinger={include_bollinger_bands}, RSI={include_rsi}')
+        logger.info(f"Combined data shape for {ticker}: {combined_df.shape} ({len(historical_df)} historical, {len(new_df)} new)")
+        
+        # Debug: Log DataFrame structure
+        logger.info(f'DataFrame shape for {ticker}: {combined_df.shape}')
+        logger.info(f'DataFrame columns for {ticker}: {combined_df.columns.tolist()}')
         
         # Transform the data
-        metrics = calculate_financial_metrics(
-            df, 
+        all_metrics = calculate_financial_metrics(
+            combined_df, 
             ema_spans=ema_spans, 
             volatility_window=int(volatility_window),
+            ticker_override=ticker,
             include_macd=include_macd,
             include_bollinger_bands=include_bollinger_bands,
             include_rsi=include_rsi,
@@ -391,9 +477,12 @@ def transform_ticker_data(extract_result: Dict[str, Any], **context) -> Dict[str
             validate_columns=True
         )
         
+        # Filter metrics to only include results for the new data
+        metrics = all_metrics[all_metrics.index.isin(new_df.index)].copy()
+        
         if metrics.empty:
             logger.warning(f'No metrics calculated for ticker {ticker}')
-            logger.warning(f'Original data shape for {ticker}: {df.shape}')
+            logger.warning(f'Original data shape for {ticker}: {new_df.shape}')
             logger.warning(f'This often happens with new tickers that have insufficient data for technical indicators')
             return {
                 'status': 'skipped',
@@ -401,15 +490,15 @@ def transform_ticker_data(extract_result: Dict[str, Any], **context) -> Dict[str
                 'ticker': ticker,
                 'execution_date': extract_result['execution_date'],
                 'debug_info': {
-                    'original_data_shape': df.shape,
-                    'original_data_columns': df.columns.tolist() if not df.empty else []
+                    'original_data_shape': new_df.shape,
+                    'original_data_columns': new_df.columns.tolist() if not new_df.empty else []
                 }
             }
         
         # Store the transformed data as Parquet file in shared volume
         # Parquet preserves DataFrame structure and handles dates properly
         file_path = f"/tmp/pipeline_data/dynamic_transform_{context['run_id']}_{ticker}.parquet"
-        metrics.to_parquet(file_path, index=False)
+        metrics.to_parquet(file_path, index=True) # Ensure index is saved
         logger.info(f'Saved transformed data for {ticker} to {file_path} ({os.path.getsize(file_path)} bytes)')
         
         # Clean up the input file
@@ -476,6 +565,14 @@ def load_ticker_data(transform_result: Dict[str, Any], **context) -> Dict[str, A
         metrics = pd.read_parquet(transform_file_path)
         logger.info(f'Loaded transformed data for {ticker} from {transform_file_path} ({os.path.getsize(transform_file_path)} bytes)')
         
+        # *** FIX: Reset the index to convert the 'Date' index back into a 'date' column ***
+        if 'date' not in metrics.columns:
+            metrics.reset_index(inplace=True)
+
+        # yfinance saves the index as 'Date', but the loader expects 'date' (lowercase)
+        if 'Date' in metrics.columns:
+            metrics.rename(columns={'Date': 'date'}, inplace=True)
+            
         # Clean up the transformed data file
         if os.path.exists(transform_file_path):
             os.unlink(transform_file_path)

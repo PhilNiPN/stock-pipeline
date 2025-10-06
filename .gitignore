@@ -28,3 +28,6 @@ dist/
 *.sqlite
 .DS_Store
 ARCHITECTURE.md
+.streamlit/
+.streamlit/config.toml
+.streamlit/secrets.toml

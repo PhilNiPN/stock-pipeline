@@ -205,6 +205,7 @@ def calculate_financial_metrics(
     ema_spans: Iterable[int] = (9, 20, 50),
     volatility_window: int = 21,
     validate_columns: bool = False,
+    ticker_override: str | None = None,
     include_macd: bool = True,
     include_bollinger_bands: bool = True,
     include_rsi: bool = True,
@@ -239,6 +240,9 @@ def calculate_financial_metrics(
     validate_columns : bool, optional
         If True, validates required OHLCV columns before processing. Useful for
         single-ticker processing or when you need strict validation. Defaults to False.
+    ticker_override : str or None, optional
+        If provided, this ticker will be used instead of inferring from data.
+        Useful for single-ticker processing or when you want to force a specific ticker.
     include_macd : bool, optional
         Whether to compute MACD indicator. Defaults to True.
     include_bollinger_bands : bool, optional
@@ -267,7 +271,10 @@ def calculate_financial_metrics(
     frames: List[pd.DataFrame] = []
 
     # Determine if the DataFrame has a multi‑index in columns
-    if isinstance(data.columns, pd.MultiIndex):
+    if ticker_override:
+        tickers = [ticker_override]
+        has_multi_index = False
+    elif isinstance(data.columns, pd.MultiIndex):
         tickers = data.columns.get_level_values(1).unique()
         has_multi_index = True
     else:
@@ -361,7 +368,7 @@ def calculate_financial_metrics(
                 logger.warning(f'Multi-ticker index is not DatetimeIndex for {ticker}, attempting conversion')
                 result['date'] = pd.to_datetime(result.index)
                 
-            frames.append(result.reset_index(drop=True))
+            frames.append(result)
             
         except Exception as e:
             logger.error(f'Error calculating metrics for ticker {ticker}: {e}')
@@ -376,17 +383,17 @@ def calculate_financial_metrics(
         logger.warning('No valid data frames to concatenate')
         return pd.DataFrame()
         
-    metrics = pd.concat(frames, ignore_index=True)
+    metrics = pd.concat(frames)
     
     # Handle NaN returns more gracefully for new tickers or single-day data
     initial_rows = len(metrics)
-    metrics_with_returns = metrics.dropna(subset=['return']).reset_index(drop=True)
+    metrics_with_returns = metrics.dropna(subset=['return'])
     
     if metrics_with_returns.empty and initial_rows > 0:
         # If we have data but no valid returns, keep the data with zero returns
         logger.warning(f'No valid returns calculated, keeping raw data with zero returns for {initial_rows} rows')
         metrics['return'] = metrics['return'].fillna(0.0)
-        metrics = metrics.reset_index(drop=True)
+        metrics = metrics
     else:
         metrics = metrics_with_returns
 
