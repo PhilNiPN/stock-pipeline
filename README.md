@@ -8,7 +8,27 @@ All services — PostgreSQL, Airflow, Streamlit, and Python application code —
 
 ![Pipeline Architecture](architecture.png)
 
+## What this looks like
+
+- A simple web dashboard where you can pick a stock and a date range.
+- Interactive charts that show price history together with key indicators.
+- A quick summary view that highlights whether a stock looks more bullish/bearish or overbought/oversold.
+
+![Dashboard Example 1](streamlit-dashboard-1.png)
+![Dashboard Example 2](streamlit-dashboard-3.png)
+
+### Airflow
+
+![Airflow Example 1](airflow-ui.png)
+![Airflow Example 2](airflow-DAG-overview.png)
+![Airflow Example 3](airflow-bootstrap.png)
+
+### API
+
+![API documentation](FastAPI.png)
+
 ## Table of Contents
+- [What this looks like](#what-this-looks-like)
 - [Key Features](#key-features)
 - [Technology Stack](#technology-stack)
 - [Architecture Overview](#architecture-overview)
@@ -30,7 +50,8 @@ All services — PostgreSQL, Airflow, Streamlit, and Python application code —
 
 ## Key Features
 
-- **End-to-End Multi-Container Setup**: PostgreSQL, Airflow, Streamlit, and Python ETL services orchestrated with Docker Compose.
+- **End-to-End Multi-Container Setup**: PostgreSQL, Airflow, FastAPI, Streamlit, and Python ETL services orchestrated with Docker Compose.
+- **Production REST API**: FastAPI service with auto-generated documentation, request validation, and comprehensive endpoints for programmatic data access.
 - **Automated ETL Pipeline**: Daily extraction of OHLCV stock data from Yahoo Finance with incremental processing (fetches only new data).
 - **Technical Indicators**:
   - Daily returns
@@ -52,13 +73,14 @@ All services — PostgreSQL, Airflow, Streamlit, and Python application code —
 ##  Technology Stack
 
 - **Python 3.11**: Core application logic
-- **Apache Airflow 2.9 (TaskFlow API)**: Workflow orchestration and scheduling
+- **Apache Airflow 2.9 (TaskFlow API)**: Workflow orchestration and scheduling
 - **PostgreSQL 17.5**: Relational database with indexed schema
 - **SQLAlchemy & psycopg2‑binary** for database access
 - **Pandas/NumPy**: Data manipulation and financial calculations
+- **FastAPI & Uvicorn**: High-performance REST API with auto-generated docs
 - **Streamlit**: Interactive web dashboard
 - **Plotly**: Professional financial charts
-- **Containerization**: Docker & docker‑compose for reproducible multi‑service setup (database, Airflow, ETL worker and frontend)
+- **Containerization**: Docker & docker‑compose for reproducible multi‑service setup (database, Airflow, API, ETL worker and frontend)
 - **pytest**: Comprehensive testing framework
 
 ## Architecture Overview
@@ -195,6 +217,7 @@ docker compose up -d --build
 ### 4. Access Applications
 - **Airflow UI**: http://localhost:8081 (admin/admin)
 - **Streamlit Dashboard**: http://localhost:8501
+- **REST API**: http://localhost:8000 (docs at http://localhost:8000/api/docs)
 - **PostgreSQL**: localhost:5434
 
 ### 5. Initialize Airflow
@@ -251,6 +274,86 @@ The test suite includes comprehensive coverage for:
 - **Bollinger Bands**: Standard 20-period SMA with 2 standard deviations
 - **Validation**: All indicators tested with known values and edge cases
 
+##  REST API
+
+The project includes a FastAPI service that lets other tools and systems read the processed stock data.
+
+### API in simple terms (for non-technical readers)
+- **Check that everything is running**: A simple health check shows whether the system and database are up.
+- **See which stocks are tracked**: You can look up the list of tickers the pipeline currently follows.
+- **View historical data with “smart” metrics**: Other tools (like Excel, BI dashboards, or reports) can fetch daily prices together with indicators such as trend, volatility, and momentum.
+- **Get a quick traffic-light style summary per stock**: A summary view provides the latest price and clear signals (for example, bullish/bearish or overbought/oversold) so you can get a quick feel for the market without reading charts.
+
+For developers, the API is fully documented via the interactive docs at `http://localhost:8000/api/docs`.
+
+### **API Endpoints**
+
+#### **Health & Discovery**
+- `GET /` - API information and endpoint listing
+- `GET /api/health` - Health check with database connectivity status
+
+#### **Data Endpoints**
+- `GET /api/v1/tickers` - List all available tickers with metadata
+- `GET /api/v1/prices/{ticker}` - Complete OHLCV data with all indicators
+- `GET /api/v1/indicators/{ticker}` - Technical indicators only (EMAs, MACD, Bollinger Bands, RSI)
+- `GET /api/v1/summary/{ticker}` - Latest summary with trading signals
+
+### **Query Parameters**
+All data endpoints support:
+- `start_date` (YYYY-MM-DD): Filter start date (default: 1 year ago)
+- `end_date` (YYYY-MM-DD): Filter end date (default: today)
+- `limit`: Maximum records (default: 1000, max: 10000)
+
+### **Example Usage**
+
+```bash
+# Get all available tickers
+curl http://localhost:8000/api/v1/tickers
+
+# Get price data for AAPL in 2024
+curl "http://localhost:8000/api/v1/prices/AAPL?start_date=2024-01-01&end_date=2024-12-31"
+
+# Get technical indicators only
+curl http://localhost:8000/api/v1/indicators/NVDA
+
+# Get latest summary with trading signals
+curl http://localhost:8000/api/v1/summary/MSFT
+```
+
+### **API Response Example**
+
+```json
+{
+  "ticker": "AAPL",
+  "date": "2024-10-14",
+  "current_price": 178.45,
+  "volume": 45678900,
+  "daily_return": 0.0123,
+  "volatility": 0.1856,
+  "ema_9": 177.82,
+  "ema_20": 175.23,
+  "ema_50": 172.15,
+  "macd": 1.23,
+  "macd_signal": 0.98,
+  "rsi": 65.4,
+  "bb_position": 0.72,
+  "signals": {
+    "rsi_signal": "Neutral",
+    "macd_signal": "Bullish",
+    "bb_signal": "Within Bands",
+    "ema_trend": "Bullish"
+  }
+}
+```
+
+### **API Features**
+- **Auto-generated Documentation**: Interactive Swagger UI at `/api/docs`
+- **Request Validation**: Pydantic models ensure data integrity
+- **Connection Pooling**: Optimized database connections for performance
+- **CORS Support**: Configurable cross-origin resource sharing
+- **Health Checks**: Container-level health monitoring
+- **Error Handling**: Comprehensive HTTP error responses
+
 ##  Dashboard Features
 
 The Streamlit dashboard provides comprehensive technical analysis capabilities:
@@ -286,7 +389,6 @@ The Streamlit dashboard provides comprehensive technical analysis capabilities:
 
 ![Dashboard Example 1](streamlit-dashboard-1.png)
 ![Dashboard Example 2](streamlit-dashboard-3.png)
-
 ##  Configuration
 
 ### Airflow Variables
@@ -339,10 +441,16 @@ The Streamlit dashboard provides comprehensive technical analysis capabilities:
 │   ├── stock_pipeline_dag.py
 │   ├── stock_pipeline_dynamic_dag.py
 │   └── bootstrap_stock_data_dag.py
+├── api/                           # FastAPI REST API
+│   ├── main.py                    # API application and endpoints
+│   ├── models.py                  # Pydantic request/response models
+│   ├── database.py                # Database connection and session management
+│   └── __init__.py                # Package initialization
 ├── frontend/                      # Streamlit dashboard
 ├── sql/                           # Database initialization scripts
 ├── docker-compose.yml             # Service orchestration
 ├── Dockerfile.app                 # ETL service container
+├── Dockerfile.api                 # FastAPI service container
 ├── Dockerfile.frontend            # Streamlit container
 ├── requirements.txt               # Python dependencies
 ├── env.example                    # Environment template
@@ -353,16 +461,19 @@ The Streamlit dashboard provides comprehensive technical analysis capabilities:
 
 This project showcases advanced data engineering capabilities:
 
-- **Multi-Service Architecture**: Orchestrating PostgreSQL, Airflow, and Streamlit in production-ready containers
+- **Multi-Service Architecture**: Orchestrating PostgreSQL, Airflow, FastAPI, and Streamlit in production-ready containers
+- **API Design & Development**: RESTful API with FastAPI, Pydantic validation, and auto-generated OpenAPI documentation
 - **Financial Data Processing**: Real-world implementation of technical indicators and time-series analysis
 - **Airflow Mastery**: TaskFlow API, dynamic task mapping, and custom DAG strategies for different use cases
 - **Data Pipeline Optimization**: Incremental processing, file-based data passing, and intelligent resource management
 - **Production-Ready Code**: Comprehensive error handling, logging, validation, and testing strategies
-- **Full-Stack Data Engineering**: From raw API extraction to interactive dashboard visualization
+- **Full-Stack Data Engineering**: From raw API extraction to REST API endpoints to interactive dashboard visualization
 
 ##  Future Enhancements
 
 ### Near-term improvements
+- **API Authentication**: JWT-based authentication, API key management, and rate limiting.
+- **API Caching**: Redis integration for frequently-accessed data to reduce database load.
 - **Exponential Backoff & Smarter Retries**: More resilient API calls using Airflow's retry_exponential_backoff or Tenacity.  
 - **Advanced Data Validation**: Pandera-based schema validation, data quality scoring, and outlier detection.  
 - **Additional Technical Indicators**: VWAP, Stochastic Oscillator, Williams %R, and Ichimoku Cloud for comprehensive analysis.  

@@ -4,47 +4,30 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from sqlalchemy import create_engine, text
+import requests
 import streamlit as st
 
 st.set_page_config(page_title="Stock Dashboard", layout="wide")
 st.title("Stock Candlesticks")
 
-# Try to get DB_URL from secrets first, then environment variables, then construct from individual vars
-DB_URL = None
-try:
-    DB_URL = st.secrets.get("DB_URL")
-except:
-    pass
-
-if not DB_URL:
-    DB_URL = os.getenv("DB_URL")
-
-if not DB_URL:
-    # Construct from individual environment variables
-    db_host = os.getenv("DB_HOST", "db")
-    db_port = os.getenv("DB_PORT", "5432")
-    db_name = os.getenv("DB_NAME", "stockdb")
-    db_user = os.getenv("DB_USER", "postgres")
-    db_password = os.getenv("DB_PASSWORD", "mysecretpassword")
-    DB_URL = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-
-@st.cache_resource
-def get_engine(db_url: str):
-    return create_engine(db_url, pool_pre_ping=True)
-
-engine = get_engine(DB_URL)
+# API Configuration
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 @st.cache_data(ttl=120)
-def get_tickers(_engine) -> list[str]:
-    with _engine.begin() as conn:
-        return conn.execute(
-            text("SELECT DISTINCT ticker FROM price_metrics ORDER BY ticker")
-        ).scalars().all()
+def get_tickers() -> list[str]:
+    try:
+        response = requests.get(f"{API_URL}/api/v1/tickers")
+        response.raise_for_status()
+        data = response.json()
+        return [t["ticker"] for t in data["tickers"]]
+    except Exception as e:
+        st.error(f"Failed to fetch tickers from API: {e}")
+        return []
 
 with st.sidebar:
     st.header("Charts")
-    options = get_tickers(engine) or ["AAPL","MSFT","NVDA","TSLA"]
+    # Fallback to default list if API fails or returns empty
+    options = get_tickers() or ["AAPL","MSFT","NVDA","TSLA"]
     tick = st.selectbox("Ticker", options=options, index=0)
     start = st.date_input("Start", value=date(2022,1,1))
     end = st.date_input("End", value=date.today())
@@ -83,21 +66,25 @@ keep = ["date","open","high","low","close","volume","return","volatility","ema_9
         "macd","macd_signal","macd_histogram",
         "bb_middle","bb_upper","bb_lower","bb_width","bb_position",
         "rsi"]
-query = text("""
-    SELECT date, open, high, low, close, volume, return, volatility, ema_9, ema_20, ema_50,
-           macd, macd_signal, macd_histogram,
-           bb_middle, bb_upper, bb_lower, bb_width, bb_position,
-           rsi
-    FROM price_metrics
-    WHERE ticker = :t AND date BETWEEN :s AND :e
-    ORDER BY date
-""")
+
+df = pd.DataFrame()
 
 try:
-    with engine.begin() as conn:
-        df = pd.read_sql(query, conn, params={"t": tick.upper(), "s": start, "e": end})
+    response = requests.get(
+        f"{API_URL}/api/v1/prices/{tick.upper()}",
+        params={"start_date": start, "end_date": end, "limit": 5000}
+    )
+    if response.status_code == 404:
+        # No data found is not a critical error, just empty
+        pass
+    else:
+        response.raise_for_status()
+        api_data = response.json()
+        if "data" in api_data:
+            df = pd.DataFrame(api_data["data"])
+            
 except Exception as e:
-    st.error("Database query failed.")
+    st.error("Failed to fetch data from API.")
     st.exception(e)
     st.stop()
 
